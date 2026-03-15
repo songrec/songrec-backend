@@ -8,9 +8,10 @@ import lombok.Getter;
 
 @Builder
 @Getter
-public class DailyTrackResponseDto {
+public class YesterdayDailyTrackResponseDto {
   private Long id;
   private Long userId;
+  private String username;
   private Long trackId;
   private String spotifyId;
   private String name;
@@ -19,11 +20,13 @@ public class DailyTrackResponseDto {
   private LocalDate selectedDate;
   private String emotion;
 
-  public static DailyTrackResponseDto from(DailyTrack dailyTrack) {
+  public static YesterdayDailyTrackResponseDto from(DailyTrack dailyTrack) {
     if(dailyTrack.getEmotion()==null) dailyTrack.setEmotion(DailyTrackEmotion.NONE);
-    return DailyTrackResponseDto.builder()
+
+    return YesterdayDailyTrackResponseDto.builder()
         .id(dailyTrack.getId())
         .userId(dailyTrack.getUser().getId())
+        .username(dailyTrack.getUser().getUsername())
         .trackId(dailyTrack.getTrack().getId())
         .spotifyId(dailyTrack.getTrack().getSpotifyId())
         .name(dailyTrack.getTrack().getName())
