@@ -3,43 +3,31 @@ package com.in28minutes.webservices.songrec.integration.openai.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.in28minutes.webservices.songrec.integration.openai.config.OpenAiProperties;
-import com.in28minutes.webservices.songrec.integration.openai.dto.TrackTagGenerationInput;
-import com.in28minutes.webservices.songrec.integration.openai.dto.TrackTagGenerationResult;
+import com.in28minutes.webservices.songrec.integration.openai.dto.TrackSearchQueryAnalysisResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Component
 @RequiredArgsConstructor
-public class OpenAiTrackTagClient {
+public class OpenAiTrackSearchQueryClient {
   private final WebClient openAiWebClient;
   private final OpenAiProperties properties;
   private final ObjectMapper objectMapper;
 
-  public TrackTagGenerationResult generateTags(TrackTagGenerationInput input){
-    String requestBody=buildRequestBody(input);
-    String response=openAiWebClient.post()
+  public TrackSearchQueryAnalysisResult analyze(String query) {
+    String requestBody = buildRequestBody(query);
+    String response = openAiWebClient.post()
         .uri("/responses")
         .bodyValue(requestBody)
         .retrieve()
         .bodyToMono(String.class)
         .block();
-
     return parseResponse(response);
   }
 
-  private String buildUserInput(TrackTagGenerationInput input) {
-    return """
-      Generate conservative search-oriented tags from this track metadata.
-      Use only this metadata as evidence.
-
-      Track metadata:
-      %s
-      """.formatted(toJsonString(input));
-  }
-
-  private String buildRequestBody(TrackTagGenerationInput input) {
-    String userInput = buildUserInput(input);
+  private String buildRequestBody(String query) {
+    String userInput = buildUserInput(query);
 
     return """
         {
@@ -50,7 +38,7 @@ public class OpenAiTrackTagClient {
               "content": [
                 {
                   "type": "input_text",
-                  "text": "You generate conservative search-oriented music tags from limited track metadata. Use only the provided metadata as evidence. Do not invent unsupported facts. If metadata is insufficient, prefer broad and conservative tags. Do not guess BPM, detailed instrumentation, exact vocal type, or highly specific subgenres unless clearly supported. Tags must be practical for search and recommendation. Return only the structured result."
+                  "text": "You convert a user's music search request into conservative search-oriented tags. Focus on search usefulness. Keep tags short and practical. Infer only what is strongly implied by the request. Do not invent unrelated genres or moods. Include exclude_tags only when the user clearly excludes something. language should be ko, en, or unknown when appropriate. Return only the structured result.Different user requests should produce meaningfully different search tags when the mood, scene, or intent differs.Prioritize scene and mood distinctions strongly.Do not collapse distinct requests into generic tags like calm, pop, or casual listening unless the request is truly generic."
                 }
               ]
             },
@@ -67,7 +55,7 @@ public class OpenAiTrackTagClient {
           "text": {
             "format": {
               "type": "json_schema",
-              "name": "track_tag_generation",
+              "name": "track_search_query_analysis",
               "strict": true,
               "schema": {
                 "type": "object",
@@ -87,11 +75,20 @@ public class OpenAiTrackTagClient {
                     "items": { "type": "string" },
                     "maxItems": 6
                   },
-                  "short_description": {
-                    "type": "string",
-                    "maxLength": 200
+                  "genre_tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "maxItems": 5
                   },
-                  "confidence_note": {
+                  "exclude_tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "maxItems": 5
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "short_description": {
                     "type": "string",
                     "maxLength": 200
                   }
@@ -100,15 +97,28 @@ public class OpenAiTrackTagClient {
                   "mood_tags",
                   "scene_tags",
                   "texture_tags",
-                  "short_description",
-                  "confidence_note"
+                  "genre_tags",
+                  "exclude_tags",
+                  "language",
+                  "short_description"
                 ],
                 "additionalProperties": false
               }
             }
           }
         }
-        """.formatted(properties.getModel(), toJsonString(userInput));
+        """.formatted(
+        properties.getModel(),
+        toJsonString(userInput)
+    );
+  }
+  private String buildUserInput(String query) {
+    return """
+        Analyze this music search request and convert it into structured retrieval tags.
+
+        User query:
+        %s
+        """.formatted(query);
   }
 
   private String toJsonString(Object value) {
@@ -119,18 +129,18 @@ public class OpenAiTrackTagClient {
     }
   }
 
-  private TrackTagGenerationResult parseResponse(String responseBody) {
+  private TrackSearchQueryAnalysisResult parseResponse(String responseBody) {
     try {
       JsonNode root = objectMapper.readTree(responseBody);
-
       String outputText = extractOutputText(root);
+
       if (outputText == null || outputText.isBlank()) {
-        throw new RuntimeException("OpenAI response missing text output. raw=" + responseBody);
+        throw new RuntimeException("Missing output text in OpenAI response: " + responseBody);
       }
 
-      return objectMapper.readValue(outputText, TrackTagGenerationResult.class);
+      return objectMapper.readValue(outputText, TrackSearchQueryAnalysisResult.class);
     } catch (Exception e) {
-      throw new RuntimeException("Failed to parse OpenAI track tag response. raw=" + responseBody, e);
+      throw new RuntimeException("Failed to parse OpenAI search query analysis response: " + responseBody, e);
     }
   }
 
@@ -165,7 +175,6 @@ public class OpenAiTrackTagClient {
           }
         }
 
-        // 혹시 text 필드만 오는 경우 대비
         if (contentItem.has("text")) {
           String text = contentItem.path("text").asText(null);
           if (text != null && !text.isBlank()) {
@@ -177,5 +186,4 @@ public class OpenAiTrackTagClient {
 
     return null;
   }
-
 }
